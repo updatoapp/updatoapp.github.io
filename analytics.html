@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -51,9 +51,8 @@
     .theme-btn {
       appearance: none; border: 1px solid var(--btn-border); background: var(--btn-bg);
       color: var(--text); border-radius: 999px; padding: 8px 14px; font-size: 13px;
-      font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+      font-weight: 600; cursor: pointer;
     }
-    .theme-btn:hover { opacity: .9; }
     .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
     .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
     @media (max-width: 720px) { .grid, .grid2 { grid-template-columns: 1fr; } }
@@ -78,7 +77,7 @@
         <div class="sub">Swipes · sessions · time · averages (IST, last 24h)</div>
       </div>
       <div class="header-actions">
-        <button type="button" class="theme-btn" id="themeBtn" aria-label="Toggle theme">Light</button>
+        <button type="button" class="theme-btn" id="themeBtn">Light</button>
         <div class="sub" id="updated">connecting…</div>
       </div>
     </header>
@@ -125,27 +124,31 @@
   <script>
     const DB_URL = "https://updato-9368e-default-rtdb.asia-southeast1.firebasedatabase.app";
     const THEME_KEY = "updato_analytics_theme";
+    let chart;
 
     function preferredTheme() {
-      const saved = localStorage.getItem(THEME_KEY);
-      if (saved === "light" || saved === "dark") return saved;
-      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      try {
+        const saved = localStorage.getItem(THEME_KEY);
+        if (saved === "light" || saved === "dark") return saved;
+      } catch (e) {}
+      try {
+        return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      } catch (e) { return "dark"; }
     }
 
     function chartColors() {
       const s = getComputedStyle(document.documentElement);
       return {
-        tick: s.getPropertyValue("--chart-tick").trim() || "#8b95a8",
-        grid: s.getPropertyValue("--chart-grid").trim() || "rgba(0,0,0,.08)",
+        tick: (s.getPropertyValue("--chart-tick") || "#8b95a8").trim(),
+        grid: (s.getPropertyValue("--chart-grid") || "rgba(0,0,0,.08)").trim()
       };
     }
 
     function applyTheme(theme) {
       document.documentElement.setAttribute("data-theme", theme);
-      localStorage.setItem(THEME_KEY, theme);
+      try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
       const btn = document.getElementById("themeBtn");
-      btn.textContent = theme === "light" ? "Dark" : "Light";
-      btn.setAttribute("aria-label", theme === "light" ? "Switch to dark mode" : "Switch to light mode");
+      if (btn) btn.textContent = theme === "light" ? "Dark" : "Light";
       if (chart) {
         const c = chartColors();
         chart.options.scales.x.ticks.color = c.tick;
@@ -156,7 +159,7 @@
       }
     }
 
-    document.getElementById("themeBtn").addEventListener("click", () => {
+    document.getElementById("themeBtn").addEventListener("click", function () {
       const cur = document.documentElement.getAttribute("data-theme") || "dark";
       applyTheme(cur === "light" ? "dark" : "light");
     });
@@ -168,27 +171,28 @@
       const m = String(d.getUTCMonth() + 1).padStart(2, "0");
       const day = String(d.getUTCDate()).padStart(2, "0");
       const h = String(d.getUTCHours()).padStart(2, "0");
-      return `${y}-${m}-${day}-${h}`;
+      return y + "-" + m + "-" + day + "-" + h;
     }
     function last24Keys() {
-      const keys = [], base = istNow();
-      for (let i = 23; i >= 0; i--) keys.push(hourKeyFromDate(new Date(base.getTime() - i * 3600 * 1000)));
+      const keys = [];
+      const base = istNow();
+      for (var i = 23; i >= 0; i--) keys.push(hourKeyFromDate(new Date(base.getTime() - i * 3600 * 1000)));
       return keys;
     }
     function labelHour(key) { return key.slice(11) + ":00"; }
     function fmtDuration(sec) {
       sec = Math.max(0, Math.round(sec));
       if (sec < 60) return sec + "s";
-      const m = Math.floor(sec / 60), s = sec % 60;
+      var m = Math.floor(sec / 60), s = sec % 60;
       if (m < 60) return m + "m " + s + "s";
-      const h = Math.floor(m / 60), rm = m % 60;
+      var h = Math.floor(m / 60), rm = m % 60;
       return h + "h " + rm + "m";
     }
 
-    let chart;
     function ensureChart(labels, values) {
-      const ctx = document.getElementById("chart").getContext("2d");
-      const c = chartColors();
+      if (typeof Chart === "undefined") return;
+      var ctx = document.getElementById("chart").getContext("2d");
+      var c = chartColors();
       if (chart) {
         chart.data.labels = labels;
         chart.data.datasets[0].data = values;
@@ -198,36 +202,36 @@
       chart = new Chart(ctx, {
         type: "line",
         data: {
-          labels,
+          labels: labels,
           datasets: [{
             label: "Swipes", data: values, borderColor: "#4f7cff",
             backgroundColor: "rgba(79,124,255,.18)", fill: true, tension: 0.35,
-            pointRadius: 2, borderWidth: 2,
-          }],
+            pointRadius: 2, borderWidth: 2
+          }]
         },
         options: {
           responsive: true,
           plugins: { legend: { display: false } },
           scales: {
             x: { ticks: { color: c.tick, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: c.grid } },
-            y: { beginAtZero: true, ticks: { color: c.tick, precision: 0 }, grid: { color: c.grid } },
-          },
-        },
+            y: { beginAtZero: true, ticks: { color: c.tick, precision: 0 }, grid: { color: c.grid } }
+          }
+        }
       });
     }
 
     async function refresh() {
-      const status = document.getElementById("status");
+      var status = document.getElementById("status");
+      var updated = document.getElementById("updated");
       try {
-        const res = await fetch(`${DB_URL}/hourly.json`, { cache: "no-store" });
+        var res = await fetch(DB_URL + "/hourly.json", { cache: "no-store" });
         if (!res.ok) throw new Error("HTTP " + res.status);
-        const hourly = await res.json();
-        const keys = last24Keys();
-
-        let swipes = 0, sessions = 0, timeSec = 0;
-        const swipeSeries = keys.map((k) => {
-          const row = hourly && hourly[k];
-          const s = row ? Number(row.swipes || 0) : 0;
+        var hourly = await res.json();
+        var keys = last24Keys();
+        var swipes = 0, sessions = 0, timeSec = 0;
+        var swipeSeries = keys.map(function (k) {
+          var row = hourly && hourly[k];
+          var s = row ? Number(row.swipes || 0) : 0;
           swipes += s;
           sessions += row ? Number(row.sessions || 0) : 0;
           timeSec += row ? Number(row.time_sec || 0) : 0;
@@ -237,18 +241,19 @@
         document.getElementById("swipes24").textContent = swipes.toLocaleString();
         document.getElementById("sessions24").textContent = sessions.toLocaleString();
         document.getElementById("time24").textContent = fmtDuration(timeSec);
-        document.getElementById("avgSwipes").textContent =
-          sessions > 0 ? (swipes / sessions).toFixed(1) : "—";
-        document.getElementById("avgTime").textContent =
-          sessions > 0 ? fmtDuration(timeSec / sessions) : "—";
+        document.getElementById("avgSwipes").textContent = sessions > 0 ? (swipes / sessions).toFixed(1) : "—";
+        document.getElementById("avgTime").textContent = sessions > 0 ? fmtDuration(timeSec / sessions) : "—";
 
-        ensureChart(keys.map(labelHour), swipeSeries);
-        document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+        try { ensureChart(keys.map(labelHour), swipeSeries); } catch (ce) { console.warn(ce); }
+
+        updated.textContent = "updated " + new Date().toLocaleTimeString();
         status.className = "status";
-        status.textContent = "Averages are per session (app open/resume), not unique users — free-tier safe.";
+        status.textContent = "Averages are per session (app open/resume), not unique users.";
       } catch (e) {
+        updated.textContent = "error";
         status.className = "status err";
-        status.textContent = "Cannot read stats: " + e.message;
+        status.textContent = "Cannot read stats: " + (e && e.message ? e.message : e);
+        console.error(e);
       }
     }
 
