@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Updato Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0d12; --card: #141821; --text: #f2f4f8; --muted: #8b95a8;
+      --accent: #4f7cff; --accent2: #2dd4a8; --warn: #f59e0b; --border: rgba(255,255,255,.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(900px 400px at 20% -10%, rgba(79,124,255,.18), transparent), var(--bg);
+      color: var(--text); min-height: 100vh;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 28px 18px 48px; }
+    header { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }
+    .logo { font-weight: 900; letter-spacing: 1px; font-size: 22px;
+      background: linear-gradient(90deg, var(--accent), #8a5cff);
+      -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2);
+      display: inline-block; margin-right: 6px; box-shadow: 0 0 0 0 rgba(45,212,168,.6);
+      animation: pulse 1.6s infinite; }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(45,212,168,.55); }
+      70% { box-shadow: 0 0 0 10px rgba(45,212,168,0); }
+      100% { box-shadow: 0 0 0 0 rgba(45,212,168,0); }
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px;
+    }
+    .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+    .card .value { font-size: 36px; font-weight: 800; margin-top: 6px; line-height: 1.1; }
+    .card .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .chart-wrap { padding: 8px 8px 16px; }
+    canvas { width: 100% !important; max-height: 320px; }
+    .status { margin-top: 14px; font-size: 13px; color: var(--muted); }
+    .status.err { color: var(--warn); }
+    a { color: var(--accent); }
+    .setup {
+      display: none; margin-top: 16px; padding: 14px 16px; border-radius: 12px;
+      border: 1px solid rgba(245,158,11,.35); background: rgba(245,158,11,.08); color: #fde68a; font-size: 13px; line-height: 1.5;
+    }
+    .setup.show { display: block; }
+    ol { margin: 8px 0 0 18px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="logo">UPDATO ANALYTICS</div>
+        <div class="sub">Live users · swipes · last 24 hours (IST)</div>
+      </div>
+      <div class="sub"><span class="live-dot"></span><span id="updated">connecting…</span></div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Live users</div>
+        <div class="value" id="live">—</div>
+        <div class="hint">Active in last 90 seconds</div>
+      </div>
+      <div class="card">
+        <div class="label">Swipes (24h)</div>
+        <div class="value" id="swipes24">—</div>
+        <div class="hint">Sum of hourly buckets</div>
+      </div>
+      <div class="card">
+        <div class="label">This hour</div>
+        <div class="value" id="swipesNow">—</div>
+        <div class="hint" id="hourLabel">IST</div>
+      </div>
+    </div>
+
+    <div class="card chart-wrap">
+      <div class="label" style="padding:10px 12px 0">Swipes · last 24 hours</div>
+      <canvas id="chart" height="120"></canvas>
+    </div>
+
+    <div class="status" id="status">Loading Firebase…</div>
+    <div class="setup" id="setup">
+      <strong>Realtime Database not reachable.</strong> Create it once (free):
+      <ol>
+        <li>Open <a href="https://console.firebase.google.com/project/updato-9368e/database" target="_blank" rel="noopener">Firebase Console → Realtime Database</a></li>
+        <li>Click <b>Create Database</b> → location <b>asia-southeast1</b> → start in <b>test mode</b></li>
+        <li>Rules tab → paste rules from <code>analytics_rules.json</code> → Publish</li>
+        <li>Confirm the DB URL matches <code>…asia-southeast1.firebasedatabase.app</code></li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    // Must match AnalyticsService.databaseURL in the Flutter app.
+    const DB_URL = "https://updato-9368e-default-rtdb.asia-southeast1.firebasedatabase.app";
+    const LIVE_WINDOW_MS = 90 * 1000;
+
+    function istNow() {
+      const utc = Date.now();
+      return new Date(utc + (5.5 * 60 * 60 * 1000));
+    }
+    function hourKeyFromDate(d) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      const h = String(d.getUTCHours()).padStart(2, "0");
+      return `${y}-${m}-${day}-${h}`;
+    }
+    function last24Keys() {
+      const keys = [];
+      const base = istNow();
+      for (let i = 23; i >= 0; i--) {
+        const d = new Date(base.getTime() - i * 3600 * 1000);
+        keys.push(hourKeyFromDate(d));
+      }
+      return keys;
+    }
+    function labelHour(key) {
+      // key: 2026-07-19-06 → 06:00
+      return key.slice(11) + ":00";
+    }
+
+    let chart;
+    function ensureChart(labels, values) {
+      const ctx = document.getElementById("chart").getContext("2d");
+      if (chart) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = values;
+        chart.update("none");
+        return;
+      }
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            label: "Swipes",
+            data: values,
+            borderColor: "#4f7cff",
+            backgroundColor: "rgba(79,124,255,.18)",
+            fill: true,
+            tension: 0.35,
+            pointRadius: 2,
+            borderWidth: 2,
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#8b95a8", maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: "rgba(255,255,255,.04)" } },
+            y: { beginAtZero: true, ticks: { color: "#8b95a8", precision: 0 }, grid: { color: "rgba(255,255,255,.06)" } },
+          },
+        },
+      });
+    }
+
+    async function fetchJson(path) {
+      const res = await fetch(`${DB_URL}/${path}.json`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${path}`);
+      return res.json();
+    }
+
+    async function refresh() {
+      const status = document.getElementById("status");
+      const setup = document.getElementById("setup");
+      try {
+        const [presence, hourly] = await Promise.all([
+          fetchJson("presence"),
+          fetchJson("hourly"),
+        ]);
+        setup.classList.remove("show");
+        status.classList.remove("err");
+
+        const now = Date.now();
+        let live = 0;
+        if (presence && typeof presence === "object") {
+          for (const uid of Object.keys(presence)) {
+            const row = presence[uid];
+            const ts = Number(row && row.lastSeen);
+            if (ts && now - ts <= LIVE_WINDOW_MS) live++;
+          }
+        }
+        document.getElementById("live").textContent = String(live);
+
+        const keys = last24Keys();
+        const values = keys.map((k) => {
+          const row = hourly && hourly[k];
+          return row ? Number(row.swipes || 0) : 0;
+        });
+        const total24 = values.reduce((a, b) => a + b, 0);
+        const currentKey = keys[keys.length - 1];
+        document.getElementById("swipes24").textContent = total24.toLocaleString();
+        document.getElementById("swipesNow").textContent = values[values.length - 1].toLocaleString();
+        document.getElementById("hourLabel").textContent = `Hour ${currentKey} (IST)`;
+        ensureChart(keys.map(labelHour), values);
+
+        document.getElementById("updated").textContent =
+          "updated " + new Date().toLocaleTimeString();
+        status.textContent = `OK · ${live} live · ${total24} swipes in 24h`;
+      } catch (e) {
+        status.classList.add("err");
+        status.textContent = "Cannot reach Realtime Database: " + e.message;
+        setup.classList.add("show");
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 10000);
+  </script>
+</body>
+</html>
