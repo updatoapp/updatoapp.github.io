@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Updato Analytics — Swipes</title>
+  <title>Updato Analytics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -22,16 +22,17 @@
       background: linear-gradient(90deg, var(--accent), #8a5cff);
       -webkit-background-clip: text; background-clip: text; color: transparent; }
     .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
-    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
-    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
+    .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
+    @media (max-width: 720px) { .grid, .grid2 { grid-template-columns: 1fr; } }
     .card {
       background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px;
     }
     .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
-    .card .value { font-size: 36px; font-weight: 800; margin-top: 6px; line-height: 1.1; }
+    .card .value { font-size: 32px; font-weight: 800; margin-top: 6px; line-height: 1.1; }
     .card .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
     .chart-wrap { padding: 8px 8px 16px; }
-    canvas { width: 100% !important; max-height: 320px; }
+    canvas { width: 100% !important; max-height: 300px; }
     .status { margin-top: 14px; font-size: 13px; color: var(--muted); }
     .status.err { color: var(--warn); }
   </style>
@@ -40,8 +41,8 @@
   <div class="wrap">
     <header>
       <div>
-        <div class="logo">UPDATO · SWIPES</div>
-        <div class="sub">Totals only · no live users · free-tier friendly</div>
+        <div class="logo">UPDATO ANALYTICS</div>
+        <div class="sub">Swipes · sessions · time · averages (IST, last 24h)</div>
       </div>
       <div class="sub" id="updated">connecting…</div>
     </header>
@@ -50,18 +51,36 @@
       <div class="card">
         <div class="label">Swipes (24h)</div>
         <div class="value" id="swipes24">—</div>
-        <div class="hint">Sum of last 24 IST hours</div>
+        <div class="hint">Total card swipes</div>
       </div>
       <div class="card">
-        <div class="label">This hour</div>
-        <div class="value" id="swipesNow">—</div>
-        <div class="hint" id="hourLabel">IST</div>
+        <div class="label">Sessions (24h)</div>
+        <div class="value" id="sessions24">—</div>
+        <div class="hint">App opens / resumes</div>
+      </div>
+      <div class="card">
+        <div class="label">Time (24h)</div>
+        <div class="value" id="time24">—</div>
+        <div class="hint">Total foreground time</div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="label">Avg swipes / session</div>
+        <div class="value" id="avgSwipes">—</div>
+        <div class="hint">swipes ÷ sessions</div>
+      </div>
+      <div class="card">
+        <div class="label">Avg time / session</div>
+        <div class="value" id="avgTime">—</div>
+        <div class="hint">time ÷ sessions</div>
       </div>
     </div>
 
     <div class="card chart-wrap">
       <div class="label" style="padding:10px 12px 0">Swipes · last 24 hours</div>
-      <canvas id="chart" height="120"></canvas>
+      <canvas id="chart" height="110"></canvas>
     </div>
 
     <div class="status" id="status">Loading…</div>
@@ -70,9 +89,7 @@
   <script>
     const DB_URL = "https://updato-9368e-default-rtdb.asia-southeast1.firebasedatabase.app";
 
-    function istNow() {
-      return new Date(Date.now() + (5.5 * 60 * 60 * 1000));
-    }
+    function istNow() { return new Date(Date.now() + 5.5 * 3600 * 1000); }
     function hourKeyFromDate(d) {
       const y = d.getUTCFullYear();
       const m = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -81,14 +98,19 @@
       return `${y}-${m}-${day}-${h}`;
     }
     function last24Keys() {
-      const keys = [];
-      const base = istNow();
-      for (let i = 23; i >= 0; i--) {
-        keys.push(hourKeyFromDate(new Date(base.getTime() - i * 3600 * 1000)));
-      }
+      const keys = [], base = istNow();
+      for (let i = 23; i >= 0; i--) keys.push(hourKeyFromDate(new Date(base.getTime() - i * 3600 * 1000)));
       return keys;
     }
     function labelHour(key) { return key.slice(11) + ":00"; }
+    function fmtDuration(sec) {
+      sec = Math.max(0, Math.round(sec));
+      if (sec < 60) return sec + "s";
+      const m = Math.floor(sec / 60), s = sec % 60;
+      if (m < 60) return m + "m " + s + "s";
+      const h = Math.floor(m / 60), rm = m % 60;
+      return h + "h " + rm + "m";
+    }
 
     let chart;
     function ensureChart(labels, values) {
@@ -104,14 +126,9 @@
         data: {
           labels,
           datasets: [{
-            label: "Swipes",
-            data: values,
-            borderColor: "#4f7cff",
-            backgroundColor: "rgba(79,124,255,.18)",
-            fill: true,
-            tension: 0.35,
-            pointRadius: 2,
-            borderWidth: 2,
+            label: "Swipes", data: values, borderColor: "#4f7cff",
+            backgroundColor: "rgba(79,124,255,.18)", fill: true, tension: 0.35,
+            pointRadius: 2, borderWidth: 2,
           }],
         },
         options: {
@@ -132,26 +149,37 @@
         if (!res.ok) throw new Error("HTTP " + res.status);
         const hourly = await res.json();
         const keys = last24Keys();
-        const values = keys.map((k) => {
+
+        let swipes = 0, sessions = 0, timeSec = 0;
+        const swipeSeries = keys.map((k) => {
           const row = hourly && hourly[k];
-          return row ? Number(row.swipes || 0) : 0;
+          const s = row ? Number(row.swipes || 0) : 0;
+          swipes += s;
+          sessions += row ? Number(row.sessions || 0) : 0;
+          timeSec += row ? Number(row.time_sec || 0) : 0;
+          return s;
         });
-        const total24 = values.reduce((a, b) => a + b, 0);
-        document.getElementById("swipes24").textContent = total24.toLocaleString();
-        document.getElementById("swipesNow").textContent = values[values.length - 1].toLocaleString();
-        document.getElementById("hourLabel").textContent = "Hour " + keys[keys.length - 1] + " (IST)";
-        ensureChart(keys.map(labelHour), values);
+
+        document.getElementById("swipes24").textContent = swipes.toLocaleString();
+        document.getElementById("sessions24").textContent = sessions.toLocaleString();
+        document.getElementById("time24").textContent = fmtDuration(timeSec);
+        document.getElementById("avgSwipes").textContent =
+          sessions > 0 ? (swipes / sessions).toFixed(1) : "—";
+        document.getElementById("avgTime").textContent =
+          sessions > 0 ? fmtDuration(timeSec / sessions) : "—";
+
+        ensureChart(keys.map(labelHour), swipeSeries);
         document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
         status.className = "status";
-        status.textContent = total24.toLocaleString() + " swipes in last 24h";
+        status.textContent = "Averages are per session (app open/resume), not unique users — free-tier safe.";
       } catch (e) {
         status.className = "status err";
-        status.textContent = "Cannot read hourly stats: " + e.message;
+        status.textContent = "Cannot read stats: " + e.message;
       }
     }
 
     refresh();
-    setInterval(refresh, 30000); // 30s — dashboard only, not per-user
+    setInterval(refresh, 30000);
   </script>
 </body>
 </html>
