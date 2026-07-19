@@ -1,13 +1,6 @@
 {
   "rules": {
     ".read": false,
-    "presence": {
-      ".read": true,
-      "$uid": {
-        ".write": true,
-        ".validate": "newData.hasChildren(['lastSeen', 'lang']) && newData.child('lastSeen').isNumber() && newData.child('lang').isString() && newData.child('lang').val().length <= 8"
-      }
-    },
     "hourly": {
       ".read": true,
       "$hour": {
