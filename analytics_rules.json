@@ -5,7 +5,7 @@
       ".read": true,
       "$hour": {
         ".write": true,
-        ".validate": "newData.hasChildren(['swipes']) && newData.child('swipes').isNumber() && newData.child('swipes').val() >= 0"
+        ".validate": "newData.hasChildren() && (!newData.hasChild('swipes') || newData.child('swipes').isNumber()) && (!newData.hasChild('sessions') || newData.child('sessions').isNumber()) && (!newData.hasChild('time_sec') || newData.child('time_sec').isNumber())"
       }
     }
   }
