@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Updato Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root, [data-theme="dark"] {
+      --bg: #0b0d12;
+      --bg-glow: rgba(79,124,255,.18);
+      --card: #141821;
+      --text: #f2f4f8;
+      --muted: #8b95a8;
+      --accent: #4f7cff;
+      --warn: #f59e0b;
+      --border: rgba(255,255,255,.08);
+      --chart-tick: #8b95a8;
+      --chart-grid: rgba(255,255,255,.06);
+      --btn-bg: rgba(255,255,255,.08);
+      --btn-border: rgba(255,255,255,.12);
+    }
+    [data-theme="light"] {
+      --bg: #f4f6fb;
+      --bg-glow: rgba(79,124,255,.12);
+      --card: #ffffff;
+      --text: #12151c;
+      --muted: #5c6578;
+      --accent: #3b6ef5;
+      --warn: #c2410c;
+      --border: rgba(15,23,42,.08);
+      --chart-tick: #5c6578;
+      --chart-grid: rgba(15,23,42,.08);
+      --btn-bg: #ffffff;
+      --btn-border: rgba(15,23,42,.12);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(900px 400px at 20% -10%, var(--bg-glow), transparent), var(--bg);
+      color: var(--text); min-height: 100vh;
+      transition: background .2s ease, color .2s ease;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 28px 18px 48px; }
+    header { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }
+    .logo { font-weight: 900; letter-spacing: 1px; font-size: 22px;
+      background: linear-gradient(90deg, var(--accent), #8a5cff);
+      -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .theme-btn {
+      appearance: none; border: 1px solid var(--btn-border); background: var(--btn-bg);
+      color: var(--text); border-radius: 999px; padding: 8px 14px; font-size: 13px;
+      font-weight: 600; cursor: pointer;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
+    .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
+    @media (max-width: 720px) { .grid, .grid2 { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+    .card .value { font-size: 32px; font-weight: 800; margin-top: 6px; line-height: 1.1; }
+    .card .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .chart-wrap { padding: 8px 8px 16px; }
+    canvas { width: 100% !important; max-height: 300px; }
+    .status { margin-top: 14px; font-size: 13px; color: var(--muted); }
+    .status.err { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="logo">UPDATO ANALYTICS</div>
+        <div class="sub">Swipes · sessions · time · averages (IST, last 24h)</div>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="theme-btn" id="themeBtn">Light</button>
+        <div class="sub" id="updated">connecting…</div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Swipes (24h)</div>
+        <div class="value" id="swipes24">—</div>
+        <div class="hint">Total card swipes</div>
+      </div>
+      <div class="card">
+        <div class="label">Sessions (24h)</div>
+        <div class="value" id="sessions24">—</div>
+        <div class="hint">App opens / resumes</div>
+      </div>
+      <div class="card">
+        <div class="label">Time (24h)</div>
+        <div class="value" id="time24">—</div>
+        <div class="hint">Total foreground time</div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="label">Avg swipes / session</div>
+        <div class="value" id="avgSwipes">—</div>
+        <div class="hint">swipes ÷ sessions</div>
+      </div>
+      <div class="card">
+        <div class="label">Avg time / session</div>
+        <div class="value" id="avgTime">—</div>
+        <div class="hint">time ÷ sessions</div>
+      </div>
+    </div>
+
+    <div class="card chart-wrap">
+      <div class="label" style="padding:10px 12px 0">Swipes · last 24 hours</div>
+      <canvas id="chart" height="110"></canvas>
+    </div>
+
+    <div class="status" id="status">Loading…</div>
+  </div>
+
+  <script>
+    const DB_URL = "https://updato-9368e-default-rtdb.asia-southeast1.firebasedatabase.app";
+    const THEME_KEY = "updato_analytics_theme";
+    let chart;
+
+    function preferredTheme() {
+      try {
+        const saved = localStorage.getItem(THEME_KEY);
+        if (saved === "light" || saved === "dark") return saved;
+      } catch (e) {}
+      try {
+        return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      } catch (e) { return "dark"; }
+    }
+
+    function chartColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        tick: (s.getPropertyValue("--chart-tick") || "#8b95a8").trim(),
+        grid: (s.getPropertyValue("--chart-grid") || "rgba(0,0,0,.08)").trim()
+      };
+    }
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+      const btn = document.getElementById("themeBtn");
+      if (btn) btn.textContent = theme === "light" ? "Dark" : "Light";
+      if (chart) {
+        const c = chartColors();
+        chart.options.scales.x.ticks.color = c.tick;
+        chart.options.scales.y.ticks.color = c.tick;
+        chart.options.scales.x.grid.color = c.grid;
+        chart.options.scales.y.grid.color = c.grid;
+        chart.update("none");
+      }
+    }
+
+    document.getElementById("themeBtn").addEventListener("click", function () {
+      const cur = document.documentElement.getAttribute("data-theme") || "dark";
+      applyTheme(cur === "light" ? "dark" : "light");
+    });
+    applyTheme(preferredTheme());
+
+    function istNow() { return new Date(Date.now() + 5.5 * 3600 * 1000); }
+    function hourKeyFromDate(d) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      const h = String(d.getUTCHours()).padStart(2, "0");
+      return y + "-" + m + "-" + day + "-" + h;
+    }
+    function last24Keys() {
+      const keys = [];
+      const base = istNow();
+      for (var i = 23; i >= 0; i--) keys.push(hourKeyFromDate(new Date(base.getTime() - i * 3600 * 1000)));
+      return keys;
+    }
+    function labelHour(key) { return key.slice(11) + ":00"; }
+    function fmtDuration(sec) {
+      sec = Math.max(0, Math.round(sec));
+      if (sec < 60) return sec + "s";
+      var m = Math.floor(sec / 60), s = sec % 60;
+      if (m < 60) return m + "m " + s + "s";
+      var h = Math.floor(m / 60), rm = m % 60;
+      return h + "h " + rm + "m";
+    }
+
+    function ensureChart(labels, values) {
+      if (typeof Chart === "undefined") return;
+      var ctx = document.getElementById("chart").getContext("2d");
+      var c = chartColors();
+      if (chart) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = values;
+        chart.update("none");
+        return;
+      }
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Swipes", data: values, borderColor: "#4f7cff",
+            backgroundColor: "rgba(79,124,255,.18)", fill: true, tension: 0.35,
+            pointRadius: 2, borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: c.tick, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: c.grid } },
+            y: { beginAtZero: true, ticks: { color: c.tick, precision: 0 }, grid: { color: c.grid } }
+          }
+        }
+      });
+    }
+
+    async function refresh() {
+      var status = document.getElementById("status");
+      var updated = document.getElementById("updated");
+      try {
+        var res = await fetch(DB_URL + "/hourly.json", { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        var hourly = await res.json();
+        var keys = last24Keys();
+        var swipes = 0, sessions = 0, timeSec = 0;
+        var swipeSeries = keys.map(function (k) {
+          var row = hourly && hourly[k];
+          var s = row ? Number(row.swipes || 0) : 0;
+          swipes += s;
+          sessions += row ? Number(row.sessions || 0) : 0;
+          timeSec += row ? Number(row.time_sec || 0) : 0;
+          return s;
+        });
+
+        document.getElementById("swipes24").textContent = swipes.toLocaleString();
+        document.getElementById("sessions24").textContent = sessions.toLocaleString();
+        document.getElementById("time24").textContent = fmtDuration(timeSec);
+        document.getElementById("avgSwipes").textContent = sessions > 0 ? (swipes / sessions).toFixed(1) : "—";
+        document.getElementById("avgTime").textContent = sessions > 0 ? fmtDuration(timeSec / sessions) : "—";
+
+        try { ensureChart(keys.map(labelHour), swipeSeries); } catch (ce) { console.warn(ce); }
+
+        updated.textContent = "updated " + new Date().toLocaleTimeString();
+        status.className = "status";
+        status.textContent = "Averages are per session (app open/resume), not unique users.";
+      } catch (e) {
+        updated.textContent = "error";
+        status.className = "status err";
+        status.textContent = "Cannot read stats: " + (e && e.message ? e.message : e);
+        console.error(e);
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 30000);
+  </script>
+</body>
+<!-- cachebust 2026-07-19T10:45:51.5677889+05:30 --></html>
